@@ -2,17 +2,16 @@
 Project: SearchAlgorithms
 File: Main
 Created on: 8/28/2017
-
+  
 Project Description:
 CS4341 - Project 1
 Search algorithms
 
 A project in which several search algorithms are implemented.
 """
-from abc import ABC, abstractmethod
-from collections.abc import Callable as abcCallable
-from functools import wraps
-from typing import List, Dict, FrozenSet, Callable
+from functools import update_wrapper
+import re
+from typing import NamedTuple, List, Dict, FrozenSet, Callable, Iterable
 import sys
 
 
@@ -24,31 +23,42 @@ class Graph:
         self.heuristics = heuristics
 
     @classmethod
-    def fromFile(cls, graph_input_txt_path: str) -> 'Graph':
-        edges = {}  # type
-        heuristics = {}  # type
-        with open(graph_input_txt_path) as graph_input_txt_fp:
-            stage_heuristic = False
-            for line in graph_input_txt_fp:
-                line = line[:-1]
-                if line == '#####':
-                    stage_heuristic = True
+    def from_lines(cls, lines: Iterable[str]) -> 'Graph':
+        edges, edge_regex = [], r'([A-Z])\s+([A-Z])\s+(\S+)\s+'
+        heuristics, heuristic_regex = [], r'([A-Z])\s+(\S+)\s+'
+
+        section, line_regex = edges, edge_regex
+        for line in lines:
+            if line.startswith("//") or re.fullmatch(r'\s*', line) is not None:
+                continue
+            elif re.fullmatch(r'#####\s+', line) is not None:
+                if section is edges:
+                    section = heuristics
+                    line_regex = heuristic_regex
                     continue
-                elif not line:
-                    break
-                if stage_heuristic is False:
-                    state1, state2, weight = line.split(' ')
-                    weight = float(weight)
-                    assert weight > 0
-                    assert frozenset({state1, state2}) not in edges
-                    edges[frozenset({state1, state2})] = weight
-                else:
-                    state1, heuristic = line.split(' ')
-                    heuristic = float(heuristic)
-                    state2 = 'G'
-                    assert frozenset({state1, state2}) not in heuristics
-                    assert heuristic >= 0
-                    heuristics[frozenset({state1, state2})] = heuristic
+                elif section is heuristics:
+                    raise ValueError("Already in heuristic section")
+                assert False, "Unreachable state"
+
+            match = re.fullmatch(line_regex, line)
+            if match is None:
+                raise ValueError("Badly-formatted line: " + line)
+            else:
+                section.append(match.groups())
+
+        # Check for illegal duplicates
+
+        heuristic_nodes = set(map(lambda x: x[0], heuristics))
+        if len(heuristics) != len(heuristic_nodes):
+            raise ValueError("Multiple heuristics for same node")
+
+        edge_pairs = set(map(lambda x: frozenset(x[:2]), edges))
+        if len(edges) != len(edge_pairs):
+            raise ValueError("Multiple edges between same nodes")
+
+        # Convert for graph creation
+        edges = dict(map(lambda x: (frozenset(x[:2]), x[2]), edges))
+        heuristics = dict(heuristics)
         return cls(edges, heuristics)
 
     def get_adjacent_states(self, state: str):
@@ -59,7 +69,6 @@ class Graph:
 
     def get_weight(self, state1: str, state2: str):
         return self.edges[frozenset({state1, state2})]
-
 
 class TreeNode:
     def __init__(self, graph: Graph, state: str, parent: 'TreeNode' = None):
@@ -76,38 +85,52 @@ class TreeNode:
     def _print_path(path: List['TreeNode']):
         return '<{}>'.format(', '.join(node.state for node in path))
 
-    def print_trace_path(self) -> str:
+    def get_trace_path(self) -> str:
         return self._print_path(self.trace_path())
 
     def expand(self) -> List['TreeNode']:
         return list(self.__class__(self.graph, state, self) for state in self.graph.get_adjacent_states(self.state))
 
-
-class Problem:
-    def __init__(self, graph_input_txt_path: str, initial_state: str, solution_state: str):
-        self.graph = Graph.fromFile(graph_input_txt_path)
-        self.solution_state = solution_state
-        self.initial_state = initial_state
-
+class Problem(NamedTuple):
+    graph: Graph
+    initial_state: str
+    solution_state: str
 
 def General_Search(problem: Problem, search_method: Callable[[List[TreeNode]], List[TreeNode]]):
-    print('Expanded\tQueue')
+    print('   Expanded  Queue')
 
     queue = [TreeNode(problem.graph, problem.initial_state, parent=None)]
     while queue:
         node = queue[0]
-        print('{}\t[{}]'.format(node.state, ', '.join(node.print_trace_path() for node in queue)))
+        print('      {}      [{}]'.format(node.state, ' '.join(node.get_trace_path() for node in queue)))
         node = queue.pop(0)
         if node.state == problem.solution_state:
-            print('goal reached!')
+            print('      goal reached!')
             return node.state
         opened_nodes = node.expand()
         opened_nodes = [opened_node for opened_node in opened_nodes
                         if opened_node.state not in [ancestor_node.state for ancestor_node in node.trace_path()]]
         queue = search_method(queue, opened_nodes)
-    print(f'failure to find path between {problem.initial_state} and {problem.solution_state}')
+    print(f'   failure to find path between {problem.initial_state} and {problem.solution_state}')
     return None
 
+def main(search_methods: Dict[str, Callable]):
+    args = sys.argv[1:]
+    assert(len(args) == 1), f'Must have exactly 1 argument. Arguments detected: {args}'
+
+    with open(args[0], 'r') as f:
+        graph = Graph.from_lines(f)
+
+    first_problem = Problem(graph, 'S', 'G')
+
+    for name, function in search_methods.items():
+        print(name)
+        General_Search(first_problem, function)
+        print()
+
+"""
+SEARCH METHOD DEFINITIONS
+"""
 
 def breadth_first_search(queue: List[TreeNode], new_nodes_list: List[TreeNode]) -> List[TreeNode]:
     return queue + new_nodes_list
@@ -116,22 +139,14 @@ def depth_first_search(queue: List[TreeNode], new_nodes_list: List[TreeNode]) ->
     return new_nodes_list + queue
 
 
-search_method_name_mapping = {
+
+search_methods = {
     'Depth 1st search': depth_first_search,
     'Breadth 1st search': breadth_first_search,
 }
 
 
-def main():
-    args = sys.argv[1:]
-    assert(len(args) == 1), f'Must have exactly 1 argument. Arguments detected: {args}'
-    name = args[0]
-    assert name in search_method_name_mapping, f'Invalid method name "{name}"'
-    first_problem = Problem(name, 'S', 'G')
-    print(name, end='\n')
-    General_Search(first_problem, 'Depth 1st search')
-
 
 # Will run at script execution
 if __name__ == '__main__':
-    main()
+    main(search_methods)
