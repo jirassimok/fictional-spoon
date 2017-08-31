@@ -1,0 +1,18 @@
+# Python
+*.pyc
+__pycache__/
+
+# IntelliJ files
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Emacs
+*~
+\#*\#
+.\#*
+TAGS
+
+# OS X
+.DS_Store
