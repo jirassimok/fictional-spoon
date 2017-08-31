@@ -9,11 +9,11 @@ Search algorithms
 
 A project in which several search algorithms are implemented.
 """
-from functools import update_wrapper
+from collections import OrderedDict
+from functools import update_wrapper, wraps
 import re
-from typing import NamedTuple, List, Dict, FrozenSet, Callable, Iterable
+from typing import NamedTuple, List, Dict, FrozenSet, Callable, Iterable, MutableMapping
 import sys
-
 
 class Graph:
     def __init__(self,
@@ -96,7 +96,10 @@ class Problem(NamedTuple):
     initial_state: str
     solution_state: str
 
-def General_Search(problem: Problem, search_method: Callable[[List[TreeNode]], List[TreeNode]]):
+
+SearchMethod = Callable[[List[TreeNode], List[TreeNode]], List[TreeNode]]
+
+def General_Search(problem: Problem, search_method: SearchMethod):
     print('   Expanded  Queue')
 
     queue = [TreeNode(problem.graph, problem.initial_state, parent=None)]
@@ -114,7 +117,7 @@ def General_Search(problem: Problem, search_method: Callable[[List[TreeNode]], L
     print(f'   failure to find path between {problem.initial_state} and {problem.solution_state}')
     return None
 
-def main(search_methods: Dict[str, Callable]):
+def main(search_methods: Dict[str, SearchMethod]):
     args = sys.argv[1:]
     assert(len(args) == 1), f'Must have exactly 1 argument. Arguments detected: {args}'
 
@@ -131,21 +134,63 @@ def main(search_methods: Dict[str, Callable]):
 """
 SEARCH METHOD DEFINITIONS
 """
+search_methods: MutableMapping[str, SearchMethod] = OrderedDict()
+def register(name: str):
+    """Register a search method with a name
+    """
+    def decorator(function):
+        global search_methods
+        search_methods[name] = function
+        return function
+    return decorator
 
+@register('Breadth 1st search')
 def breadth_first_search(queue: List[TreeNode], new_nodes_list: List[TreeNode]) -> List[TreeNode]:
     return queue + new_nodes_list
 
+@register('Depth 1st search')
 def depth_first_search(queue: List[TreeNode], new_nodes_list: List[TreeNode]) -> List[TreeNode]:
     return new_nodes_list + queue
 
 
+@register("Depth-limited search (depth limit 2)")
+def depth_limited_2(open_nodes, new_nodes):
+    return depth_limited(2, open_nodes, new_nodes)
+def depth_limited(n, open_nodes, new_nodes):
+    print("   Not Implemented")
+    ...
 
-search_methods = {
-    'Depth 1st search': depth_first_search,
-    'Breadth 1st search': breadth_first_search,
-}
+@register("Iterative deepening search")
+def iterative_deepening(open_nodes, new_nodes):
+    print("   Not Implemented")
+    ...
 
+@register("Uniform cost search")
+def uniform_cost(open_nodes, new_nodes):
+    print("   Not Implemented")
+    ...
 
+@register("Greedy search")
+def greedy(open_nodes, new_nodes):
+    print("   Not Implemented")
+    ...
+
+@register("A*")
+def astar(open_nodes, new_nodes):
+    print("   Not Implemented")
+    ...
+
+@register("Hill-climbing search")
+def hill_climbing(open_nodes, new_nodes):
+    print("   Not Implemented")
+    ...
+
+@register("Beam search (w=2)")
+def beam_2(open_nodes, new_nodes):
+    return beam(2, open_nodes, new_nodes)
+def beam(n, open_nodes, new_nodes):
+    print("   Not Implemented")
+    ...
 
 # Will run at script execution
 if __name__ == '__main__':
