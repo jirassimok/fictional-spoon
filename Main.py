@@ -12,12 +12,12 @@ A project in which several search algorithms are implemented.
 from abc import ABC, abstractmethod, ABCMeta
 from collections import OrderedDict
 from functools import reduce
-from itertools import starmap
 import re
 from typing import NamedTuple, List, Dict, Set, FrozenSet, Callable, Iterable, MutableMapping, Union, Tuple
 import sys
 
 Path = Union[Tuple[str], List[str]]
+SearchMethod = Callable[['Graph', List[Path], List[Path]], List[Path]]
 
 class GraphABC(ABC):
     @abstractmethod
@@ -86,7 +86,7 @@ class Graph(GraphABC):
 
         If any two adjacent nodes in the path are not connected, KeyError.
         """
-        return sum(starmap(self.distance, zip(path, path[1:])))
+        return sum(map(self.distance, path, path[1:]))
 
     @classmethod
     def from_lines(cls, lines: Iterable[str]) -> 'Graph':
@@ -115,16 +115,16 @@ class Graph(GraphABC):
 
         # Check for illegal duplicates
 
-        heuristic_nodes = set(map(lambda x: x[0], heuristics))
+        heuristic_nodes = {x[0] for x in heuristics}
         if len(heuristics) != len(heuristic_nodes):
             raise ValueError("Multiple heuristics for same node")
 
-        edge_pairs = set(map(lambda x: frozenset(x[:2]), edges))
+        edge_pairs = {frozenset(edge[:2]) for edge in edges}
         if len(edges) != len(edge_pairs):
             raise ValueError("Multiple edges between same nodes")
 
         # Convert for graph creation
-        edges = dict(map(lambda x: (frozenset(x[:2]), float(x[2])), edges))
+        edges = {frozenset(edge[:2]): float(edge[2]) for edge in edges}
         heuristics = {node: float(h) for node, h in heuristics}
 
         # Validate that node names are good
@@ -136,55 +136,31 @@ class Graph(GraphABC):
 
         return cls(edges, heuristics)
 
-
-class TreeNode:
-    def __init__(self, graph: Graph, state: str, parent: 'TreeNode' = None):
-        self.graph = graph
-        self.state = state
-        self.parent = parent
-
-    def trace_path(self, accumulated_path=None) -> List['TreeNode']:
-        accumulated_path = accumulated_path if accumulated_path else []
-        accumulated_path.append(self)
-        return self.parent.trace_path(accumulated_path) if self.parent is not None else accumulated_path
-
-    @staticmethod
-    def _print_path(path: List['TreeNode']):
-        return '<{}>'.format(', '.join(node.state for node in path))
-
-    def get_trace_path(self) -> str:
-        return self._print_path(self.trace_path())
-
-    def expand(self) -> List['TreeNode']:
-        return list(self.__class__(self.graph, state, self) for state in self.graph.neighbors(self.state))
-
-
 class Problem(NamedTuple):
     graph: Graph
-    initial_state: str
-    solution_state: str
+    start: str
+    goal: str
 
+def general_search(problem: Problem, search_method: SearchMethod):
+    graph = problem.graph
+    start = problem.start
+    goal = problem.goal
+    paths = [(start,)]
 
-SearchMethod = Callable[[List[TreeNode], List[TreeNode]], List[TreeNode]]
-
-def General_Search(problem: Problem, search_method: SearchMethod):
     print('   Expanded  Queue')
-
-    queue = [TreeNode(problem.graph, problem.initial_state, parent=None)]
-    while queue:
-        node = queue[0]
-        print('      {}      [{}]'.format(node.state, ' '.join(node.get_trace_path() for node in queue)))
-        node = queue.pop(0)
-        if node.state == problem.solution_state:
+    while paths:
+        expanded = paths[0][0]
+        print(f'      {expanded}      ',
+              '[<', '> <'.join(','.join(path) for path in paths), '>]',
+              sep='')
+        path = paths.pop(0)
+        if expanded == goal:
             print('      goal reached!')
-            return node.state
-        opened_nodes = node.expand()
-        opened_nodes = [opened_node for opened_node in opened_nodes
-                        if opened_node.state not in [ancestor_node.state for ancestor_node in node.trace_path()]]
-        queue = search_method(queue, opened_nodes)
-    print(f'   failure to find path between {problem.initial_state} and {problem.solution_state}')
+            return path
+        opened_paths = {(node,)+path for node in graph.neighbors(expanded) if node not in path}
+        paths = search_method(graph, paths, opened_paths)
+    print(f'   failure to find path between {start} and {goal}')
     return None
-
 
 def main(search_methods: Dict[str, SearchMethod], argv):
     args = argv[1:]
@@ -197,12 +173,13 @@ def main(search_methods: Dict[str, SearchMethod], argv):
 
     for name, function in search_methods.items():
         print(name)
-        General_Search(first_problem, function)
+        general_search(first_problem, function)
         print()
 
 """
-SEARCH METHOD DEFINITIONS
+SEARCH METHOD HELPERS
 """
+# Mapping of algorithm names to functions
 search_methods: MutableMapping[str, SearchMethod] = OrderedDict()
 def searchmethod(name: str):
     """Register a search method with a name
@@ -213,58 +190,70 @@ def searchmethod(name: str):
         return function
     return decorator
 
+def print_paths(paths: List[Path],
+                cost_calculator: Callable[[List[Path]], float]) -> str:
+    """Stringify the paths with costs as formatted by the given function.
+    """
+    pass
+
+
+
+"""
+SEARCH METHOD FUNCTIONS
+"""
+
 @searchmethod('Depth 1st search')
-def depth_first_search(queue: List[TreeNode], new_nodes_list: List[TreeNode]) -> List[TreeNode]:
-    return sorted(new_nodes_list, key=lambda treenode: treenode.state) + queue
+def depth_first(graph: Graph, open_paths: List[Path], new_paths: List[Path]) -> List[Path]:
+    return sorted(new_paths) + open_paths
 
 
 @searchmethod('Breadth 1st search')
-def breadth_first_search(queue: List[TreeNode], new_nodes_list: List[TreeNode]) -> List[TreeNode]:
-    return queue + sorted(new_nodes_list, key=lambda treenode: treenode.state)
+def breadth_first(graph: Graph, open_paths: List[Path], new_paths: List[Path]) -> List[Path]:
+    return open_paths + sorted(new_paths)
 
 
 @searchmethod("Depth-limited search (depth limit 2)")
-def depth_limited_2(open_nodes, new_nodes):
-    return depth_limited(2, open_nodes, new_nodes)
-def depth_limited(n, open_nodes, new_nodes):
+def depth_limited_2(graph: Graph, open_paths, new_paths):
+    return depth_limited(2, open_paths, new_paths)
+def depth_limited(n, open_paths, new_paths):
     print("   Not Implemented")
     ...
 
 
 @searchmethod("Iterative deepening search")
-def iterative_deepening(open_nodes, new_nodes):
+def iterative_deepening(graph: Graph, open_paths, new_paths):
     print("   Not Implemented")
     ...
 
 
 @searchmethod("Uniform cost search")
-def uniform_cost(open_nodes, new_nodes):
+def uniform_cost(graph: Graph, open_paths, new_paths):
     print("   Not Implemented")
     ...
 
 
 @searchmethod("Greedy search")
-def greedy(open_nodes, new_nodes):
+def greedy(graph: Graph, open_paths, new_paths):
     print("   Not Implemented")
     ...
 
 
 @searchmethod("A*")
-def astar(open_nodes, new_nodes):
+def astar(graph: Graph, open_paths, new_paths):
     print("   Not Implemented")
     ...
 
 
 @searchmethod("Hill-climbing search")
-def hill_climbing(open_nodes, new_nodes):
+def hill_climbing(graph: Graph, open_paths, new_paths):
     print("   Not Implemented")
     ...
 
 
 @searchmethod("Beam search (w=2)")
-def beam_2(open_nodes, new_nodes):
-    return beam(2, open_nodes, new_nodes)
-def beam(n, open_nodes, new_nodes):
+def beam_2(graph: Graph, open_paths, new_paths):
+    return beam(2, open_paths, new_paths)
+def beam(n, open_paths, new_paths):
     print("   Not Implemented")
     ...
 
