@@ -9,15 +9,64 @@ Search algorithms
 
 A project in which several search algorithms are implemented.
 """
-from abc import ABC, abstractmethod, ABCMeta
-from collections import OrderedDict
+from abc import ABC, ABCMeta, abstractmethod
 from functools import reduce
 import re
+import itertools
 from typing import NamedTuple, List, Dict, Set, FrozenSet, Callable, Iterable, MutableMapping, Union, Tuple
+import warnings
 import sys
 
 Path = Union[Tuple[str], List[str]]
-SearchMethod = Callable[['Graph', List[Path], List[Path]], List[Path]]
+
+# Forward references for as-yet-undefined types
+SearchMethod, Problem, Graph = 'SearchMethod', 'Problem', 'Graph'
+
+
+def main(search_methods: List[SearchMethod], argv):
+    args = argv[1:]
+    assert(len(args) == 1), f'Must have exactly 1 argument. Arguments detected: {args}'
+
+    with open(args[0], 'r') as f:
+        graph = Graph.from_lines(f)
+
+    first_problem = Problem(graph, 'S', 'G')
+
+    print(search_methods)
+    for method in search_methods:
+        print(method.name)
+        general_search(first_problem, method)
+        print()
+
+
+def general_search(problem: Problem, search_method: SearchMethod):
+    graph = problem.graph
+    start = problem.start
+    goal = problem.goal
+    paths = [(start,)]
+
+    print('   Expanded  Queue')
+    while paths:
+        expanded = paths[0][0]
+        print(f'      {expanded}      ',
+              search_method.paths_to_str(graph, paths), sep='')
+              # '[<', '> <'.join(','.join(path) for path in paths), '>]',
+              # sep='')
+        path = paths.pop(0)
+        if expanded == goal:
+            print('      goal reached!')
+            return path
+        opened_paths = {(node,)+path for node in graph.neighbors(expanded) if node not in path}
+        paths = search_method(graph, paths, opened_paths)
+    print(f'   failure to find path between {start} and {goal}')
+    return None
+
+
+
+class Problem(NamedTuple):
+    graph: Graph
+    start: str
+    goal: str
 
 class GraphABC(ABC):
     @abstractmethod
@@ -35,7 +84,7 @@ class GraphABC(ABC):
         If the nodes are not connected, KeyError.
         """
     @abstractmethod
-    def path_cost(path: Path) -> float:
+    def path_length(path: Path) -> float:
         """Get the total distance of the edges connecting the listed nodes.
 
         If any two adjacent nodes in the path are not connected, KeyError.
@@ -81,7 +130,7 @@ class Graph(GraphABC):
         """
         return self.edge_lengths[frozenset({a, b})]
 
-    def path_cost(self, path: Path) -> float:
+    def path_length(self, path: Path) -> float:
         """Get the total distance of the edges connecting the listed nodes.
 
         If any two adjacent nodes in the path are not connected, KeyError.
@@ -136,128 +185,179 @@ class Graph(GraphABC):
 
         return cls(edges, heuristics)
 
-class Problem(NamedTuple):
-    graph: Graph
-    start: str
-    goal: str
 
-def general_search(problem: Problem, search_method: SearchMethod):
-    graph = problem.graph
-    start = problem.start
-    goal = problem.goal
-    paths = [(start,)]
+class SearchMethodMeta(type):
+    """Metaclass for SearchMethod
 
-    print('   Expanded  Queue')
-    while paths:
-        expanded = paths[0][0]
-        print(f'      {expanded}      ',
-              '[<', '> <'.join(','.join(path) for path in paths), '>]',
-              sep='')
-        path = paths.pop(0)
-        if expanded == goal:
-            print('      goal reached!')
-            return path
-        opened_paths = {(node,)+path for node in graph.neighbors(expanded) if node not in path}
-        paths = search_method(graph, paths, opened_paths)
-    print(f'   failure to find path between {start} and {goal}')
-    return None
+    Allows calling SearchMethods like functions.
+    Prevents modification of name and search method.
+    Provides convenient string representation.
+    Automatically makes 'search' and 'paths_to_str' static methods.
+      (If 'search' is already static, this will break it.)
+    """
+    def __call__(cls, graph: Graph, open_paths: List[Path], new_paths: List[Path], **kwargs) -> List[Path]:
+        return cls.search(graph, open_paths, new_paths, **kwargs)
+    def __setattr__(cls, key, value):
+        if key == "name" or key == "search":
+            raise AttributeError("can't set SearchMethod name or search method")
+        else:
+            ABCMeta.__setattr__(cls, key, value)
+    def __str__(cls):
+        return f"SearchMethod({cls.name})"
+    def __new__(cls, name, bases, attrs):
+        # Make search and path_to_str static
+        SearchMethodMeta._staticize(attrs, "search")
+        SearchMethodMeta._staticize(attrs, "paths_to_str")
+        return type.__new__(cls, name, bases, attrs)
+    @staticmethod
+    def _staticize(attrs, attr):
+        if attr in attrs:
+            attrs[attr] = staticmethod(attrs[attr])
 
-def main(search_methods: Dict[str, SearchMethod], argv):
-    args = argv[1:]
-    assert(len(args) == 1), f'Must have exactly 1 argument. Arguments detected: {args}'
+# These abstract methods will not be enforced, because the subclasses are never instantiated
+class SearchMethod(object, metaclass=SearchMethodMeta):
 
-    with open(args[0], 'r') as f:
-        graph = Graph.from_lines(f)
+    def search(graph: Graph, open_paths: List[Path], new_paths: Set[Path], **kwargs) -> List[Path]:
+        raise TypeError("Can not call abstract search method")
 
-    first_problem = Problem(graph, 'S', 'G')
+    def paths_to_str(graph: Graph, paths: Iterable[Path]) -> None:
+        """Print a path in a nice format.
 
-    for name, function in search_methods.items():
-        print(name)
-        general_search(first_problem, function)
-        print()
+        The default implementation does not print costs.
+        """
+        return ''.join(('[<', '> <'.join(','.join(path) for path in paths), '>]'))
+
+
 
 """
-SEARCH METHOD HELPERS
+HELPER METHODS
 """
+def paths_to_str_cost(paths: List[Path], cost_calculator: Callable[[Path], float]) -> str:
+    output = ['[']
+    for path in paths:
+        cost = cost_calculator(path)
+        output.extend((
+            str(cost),
+            '<',
+            ','.join(path),
+            '> '))
+    output[-1] = '>]'
+    return ''.join(output)
+
+def groupby(iterable, key=None):
+    """Version of itertools.groupby that sorts by the key first
+    """
+    if key is None:
+        key = lambda x: x
+    return itertools.groupby(sorted(iterable, key=key), key=key)
+
+"""
+SEARCH METHOD IMPLEMENTATIONS
+"""
+
+class depth_first(SearchMethod):
+    name = 'Depth 1st search'
+    def search(graph: Graph, open_paths: List[Path], new_paths: Set[Path]) -> List[Path]:
+        return sorted(new_paths) + open_paths
+
+
+class breadth_first(SearchMethod):
+    name = 'Breadth 1st search'
+    def search(graph: Graph, open_paths: List[Path], new_paths: Set[Path]) -> List[Path]:
+        return open_paths + sorted(new_paths)
+
+
+class depth_limited_2(SearchMethod):
+    name = "Depth-limited search (depth limit 2)"
+    def search(graph, open_paths, new_paths):
+        return DepthLimited(open_paths, new_paths, 2)
+
+class depth_limited(SearchMethod):
+    name = "Depth-limited search"
+    def search(open_paths, new_paths, n):
+        print("   Not Implemented")
+        ...
+
+
+class iterative_deepening(SearchMethod):
+    name = "Iterative deepening search"
+    def search(graph, open_paths, new_paths):
+        print("   Not Implemented")
+        ...
+
+
+class uniform_cost(SearchMethod):
+    name = "Uniform cost search"
+    def search(graph, open_paths, new_paths):
+        print("   Not Implemented")
+        ...
+
+
+class greedy(SearchMethod):
+    name = "Greedy search"
+    def search(graph, open_paths, new_paths):
+        print("   Not Implemented")
+        ...
+
+
+warnings.warn("A* does not break ties according to the instructions")
+class astar(SearchMethod):
+    name = "A*"
+    def search(graph, open_paths, new_paths):
+        all_paths = open_paths + list(new_paths)
+        groups = [list(path) for _, path in
+                  groupby(all_paths, key=lambda path: path[0])]
+
+        orderby = astar._cost(graph)
+        return sorted((min(group, key=orderby) for group in groups), key=orderby)
+
+    @staticmethod
+    def _cost(graph):
+        def cost(path):
+            return graph.heuristic(path[0]) + graph.path_length(path)
+        return cost
+
+    def paths_to_str(graph, paths):
+        return paths_to_str_cost(paths, astar._cost(graph))
+
+warnings.warn("Hill-climbing does not break ties according to the instructions\n"
+              + "\tand we don't know the exact output format they want for hill-climbing")
+class hill_climbing(SearchMethod):
+    name = "Hill-climbing search"
+
+    def search(graph, open_paths, new_paths):
+        if len(new_paths) == 0:
+            return []
+        else:
+            return [max(new_paths, key=graph.heuristic)]
+
+    def paths_to_str(graph, paths):
+        return paths_to_str_cost(paths, lambda path: graph.heuristic(path[0]))
+
+
+class beam_2(SearchMethod):
+    name = "Beam search (w=2)"
+    def search(graph, open_paths, new_paths):
+        return beam(open_paths, new_paths, 2)
+
+class beam(SearchMethod):
+    name = "Beam search"
+    def search(open_paths, new_paths, n):
+        print("   Not Implemented")
+        ...
+
+
 # Mapping of algorithm names to functions
-search_methods: MutableMapping[str, SearchMethod] = OrderedDict()
-def searchmethod(name: str):
-    """Register a search method with a name
-    """
-    def decorator(function):
-        global search_methods
-        search_methods[name] = function
-        return function
-    return decorator
-
-def print_paths(paths: List[Path],
-                cost_calculator: Callable[[List[Path]], float]) -> str:
-    """Stringify the paths with costs as formatted by the given function.
-    """
-    pass
-
-
-
-"""
-SEARCH METHOD FUNCTIONS
-"""
-
-@searchmethod('Depth 1st search')
-def depth_first(graph: Graph, open_paths: List[Path], new_paths: List[Path]) -> List[Path]:
-    return sorted(new_paths) + open_paths
-
-
-@searchmethod('Breadth 1st search')
-def breadth_first(graph: Graph, open_paths: List[Path], new_paths: List[Path]) -> List[Path]:
-    return open_paths + sorted(new_paths)
-
-
-@searchmethod("Depth-limited search (depth limit 2)")
-def depth_limited_2(graph: Graph, open_paths, new_paths):
-    return depth_limited(2, open_paths, new_paths)
-def depth_limited(n, open_paths, new_paths):
-    print("   Not Implemented")
-    ...
-
-
-@searchmethod("Iterative deepening search")
-def iterative_deepening(graph: Graph, open_paths, new_paths):
-    print("   Not Implemented")
-    ...
-
-
-@searchmethod("Uniform cost search")
-def uniform_cost(graph: Graph, open_paths, new_paths):
-    print("   Not Implemented")
-    ...
-
-
-@searchmethod("Greedy search")
-def greedy(graph: Graph, open_paths, new_paths):
-    print("   Not Implemented")
-    ...
-
-
-@searchmethod("A*")
-def astar(graph: Graph, open_paths, new_paths):
-    print("   Not Implemented")
-    ...
-
-
-@searchmethod("Hill-climbing search")
-def hill_climbing(graph: Graph, open_paths, new_paths):
-    print("   Not Implemented")
-    ...
-
-
-@searchmethod("Beam search (w=2)")
-def beam_2(graph: Graph, open_paths, new_paths):
-    return beam(2, open_paths, new_paths)
-def beam(n, open_paths, new_paths):
-    print("   Not Implemented")
-    ...
+search_methods: List[SearchMethod]
+search_methods = [
+    depth_first,
+    breadth_first,
+    astar,
+    hill_climbing,
+]
 
 
 # Will run at script execution
 if __name__ == '__main__':
     main(search_methods, sys.argv)
+
