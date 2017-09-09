@@ -26,7 +26,9 @@ SearchMethod, Problem, Graph = 'SearchMethod', 'Problem', 'Graph'
 
 def main(search_methods: List[SearchMethod], argv):
     args = argv[1:]
-    assert(len(args) == 1), f'Must have exactly 1 argument. Arguments detected: {args}'
+    if len(args) != 1:
+        print(f'Must have exactly 1 argument. Arguments detected: {args}')
+        sys.exit(1)
 
     with open(args[0], 'r') as f:
         graph = Graph.from_lines(f)
@@ -48,16 +50,17 @@ def general_search(problem: Problem, search_method: SearchMethod):
     print('   Expanded  Queue')
     while paths:
         expanded = paths[0][0]
-        print(f'      {expanded}      ',
-              search_method.paths_to_str(graph, paths), sep='')
-              # '[<', '> <'.join(','.join(path) for path in paths), '>]',
-              # sep='')
+        print(f'      {expanded}      ', search_method.paths_to_str(graph, paths), sep='')
         path = paths.pop(0)
+
         if expanded == goal:
             print('      goal reached!')
             return path
-        opened_paths = {(node,)+path for node in graph.neighbors(expanded) if node not in path}
+
+        opened_paths = {(n,)+path for n in graph.neighbors(expanded) if n not in path}
+
         paths = search_method(graph, paths, opened_paths)
+
     print(f'   failure to find path between {start} and {goal}')
     return None
 
@@ -118,8 +121,7 @@ class Graph(GraphABC):
     def neighbors(self, node: str) -> Set[str]:
         """Get a safe-to-modify set of e the neighbors of the given node.
         """
-        return {n for edge in self.edges
-                for n in edge if node in edge} - {node}
+        return {n for edge in self.edges for n in edge if node in edge} - {node}
 
     def distance(self, a: str, b: str) -> float:
         """Get the distance between two nodes.
@@ -190,17 +192,23 @@ class SearchMethod(type):
     Allows calling SearchMethods like functions.
     Prevents modification of name and search method.
     Provides convenient string representation.
-    Automatically makes all methods static unless, except already-static methods.
+    Automatically makes all methods static, except already-static methods.
     """
-    def __call__(cls, graph: Graph, open_paths: List[Path], new_paths: List[Path], **kwargs) -> List[Path]:
-        return cls.search(graph, open_paths, new_paths, **kwargs)
+    def __call__(cls,
+                 graph: Graph,
+                 open_paths: List[Path],
+                 new_paths: List[Path]) -> List[Path]:
+        return cls.search(graph, open_paths, new_paths)
+
     def __setattr__(cls, key, value):
         if key == "name" or key == "search":
             raise AttributeError("can't set SearchMethod name or search method")
         else:
             object.__setattr__(cls, key, value)
+
     def __str__(cls):
         return f"SearchMethod({cls.name})"
+
     def __new__(cls, name, bases, attrs):
         copy = ((k, v) for k, v in attrs.items())
         for name, value in copy:
@@ -208,11 +216,12 @@ class SearchMethod(type):
                 attrs[name] = staticmethod(value)
         return type.__new__(cls, name, bases, attrs)
 
-# Other searchmethods should look mostly like this one, but this is their only parent.
 class SearchMethodBase(object, metaclass=SearchMethod):
+    """Base class that other SearchMethods should inherit from and use as a template"""
+
     name = None
 
-    def search(graph: Graph, open_paths: List[Path], new_paths: Set[Path], **kwargs) -> List[Path]:
+    def search(graph: Graph, open_paths: List[Path], new_paths: Set[Path]) -> List[Path]:
         raise TypeError("Can not call abstract search method")
 
     def paths_to_str(graph: Graph, paths: Iterable[Path]) -> None:
@@ -233,11 +242,7 @@ def paths_to_str_cost(paths: List[Path], cost_calculator: Callable[[Path], float
     output = ['[']
     for path in paths:
         cost = cost_calculator(path)
-        output.extend((
-            str(cost),
-            '<',
-            ','.join(path),
-            '> '))
+        output.extend((str(cost), '<', ','.join(path), '> '))
     output[-1] = '>]'
     return ''.join(output)
 
