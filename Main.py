@@ -9,7 +9,7 @@ Search algorithms
 
 A project in which several search algorithms are implemented.
 """
-from abc import ABC, ABCMeta, abstractmethod
+from abc import ABC, abstractmethod
 from functools import reduce
 import re
 import itertools
@@ -38,7 +38,6 @@ def main(search_methods: List[SearchMethod], argv):
         print(method.name)
         general_search(first_problem, method)
         print()
-
 
 def general_search(problem: Problem, search_method: SearchMethod):
     graph = problem.graph
@@ -185,7 +184,7 @@ class Graph(GraphABC):
         return cls(edges, heuristics)
 
 
-class SearchMethodMeta(type):
+class SearchMethod(type):
     """Metaclass for SearchMethod
 
     Allows calling SearchMethods like functions.
@@ -199,7 +198,7 @@ class SearchMethodMeta(type):
         if key == "name" or key == "search":
             raise AttributeError("can't set SearchMethod name or search method")
         else:
-            ABCMeta.__setattr__(cls, key, value)
+            object.__setattr__(cls, key, value)
     def __str__(cls):
         return f"SearchMethod({cls.name})"
     def __new__(cls, name, bases, attrs):
@@ -210,7 +209,7 @@ class SearchMethodMeta(type):
         return type.__new__(cls, name, bases, attrs)
 
 # Other searchmethods should look mostly like this one, but this is their only parent.
-class SearchMethod(object, metaclass=SearchMethodMeta):
+class SearchMethodBase(object, metaclass=SearchMethod):
     name = None
 
     def search(graph: Graph, open_paths: List[Path], new_paths: Set[Path], **kwargs) -> List[Path]:
@@ -222,7 +221,6 @@ class SearchMethod(object, metaclass=SearchMethodMeta):
         The default implementation does not print costs.
         """
         return ''.join(('[<', '> <'.join(','.join(path) for path in paths), '>]'))
-
 
 
 """
@@ -254,45 +252,45 @@ def groupby(iterable, key=None):
 SEARCH METHOD IMPLEMENTATIONS
 """
 
-class depth_first(SearchMethod):
+class depth_first(SearchMethodBase):
     name = 'Depth 1st search'
     def search(graph: Graph, open_paths: List[Path], new_paths: Set[Path]) -> List[Path]:
         return sorted(new_paths) + open_paths
 
 
-class breadth_first(SearchMethod):
+class breadth_first(SearchMethodBase):
     name = 'Breadth 1st search'
     def search(graph: Graph, open_paths: List[Path], new_paths: Set[Path]) -> List[Path]:
         return open_paths + sorted(new_paths)
 
 
-class depth_limited_2(SearchMethod):
-    name = "Depth-limited search (depth limit 2)"
-    def search(graph, open_paths, new_paths):
-        return DepthLimited(open_paths, new_paths, 2)
-
-class depth_limited(SearchMethod):
-    name = "Depth-limited search"
-    def search(open_paths, new_paths, n):
-        print("   Not Implemented")
-        ...
+def depth_limited(limit: int) -> SearchMethod:
+    """Method to construct depth-limited search instances of SearchMethod"""
+    class depth_limited_n(SearchMethodBase):
+        name = f"Depth-limited search (depth-limit = {limit})"
+        def search(graph, open_paths, new_paths):
+            valid = lambda path: len(path)-1 <= limit
+            return sorted(filter(valid, new_paths)) + open_paths
+    return depth_limited_n
 
 
-class iterative_deepening(SearchMethod):
+# Iterative-Deepening search should be implemented as a normal method,
+# not an extension of SearchMethod and general_search
+def iterative_deepening(SearchMethodBase):
     name = "Iterative deepening search"
     def search(graph, open_paths, new_paths):
         print("   Not Implemented")
         ...
 
 
-class uniform_cost(SearchMethod):
-    name = "Uniform cost search"
+class uniform_cost(SearchMethodBase):
+    name = "Uniform cost search (Branch-and-Bound)"
     def search(graph, open_paths, new_paths):
         print("   Not Implemented")
         ...
 
 
-class greedy(SearchMethod):
+class greedy(SearchMethodBase):
     name = "Greedy search"
     def search(graph, open_paths, new_paths):
         print("   Not Implemented")
@@ -300,7 +298,7 @@ class greedy(SearchMethod):
 
 
 warnings.warn("A* does not break ties according to the instructions")
-class astar(SearchMethod):
+class astar(SearchMethodBase):
     name = "A*"
     def search(graph, open_paths, new_paths):
         all_paths = open_paths + list(new_paths)
@@ -318,9 +316,10 @@ class astar(SearchMethod):
     def paths_to_str(graph, paths):
         return paths_to_str_cost(paths, astar.cost(graph))
 
+
 warnings.warn("Hill-climbing does not break ties according to the instructions\n"
               + "\tand we don't know the exact output format they want for hill-climbing")
-class hill_climbing(SearchMethod):
+class hill_climbing(SearchMethodBase):
     name = "Hill-climbing search"
 
     def search(graph, open_paths, new_paths):
@@ -333,23 +332,22 @@ class hill_climbing(SearchMethod):
         return paths_to_str_cost(paths, lambda path: graph.heuristic(path[0]))
 
 
-class beam_2(SearchMethod):
-    name = "Beam search (w=2)"
-    def search(graph, open_paths, new_paths):
-        return beam(open_paths, new_paths, 2)
-
-class beam(SearchMethod):
-    name = "Beam search"
-    def search(open_paths, new_paths, n):
-        print("   Not Implemented")
-        ...
+def beam(limit: int) -> SearchMethod:
+    """Method to construct beam search instances of SearchMethod"""
+    class beam_k(SearchMethodBase):
+        name = "Beam search"
+        def search(graph, open_paths, new_paths):
+            print("   Not Implemented")
+            ...
+    return beam_k
 
 
 # Mapping of algorithm names to functions
-search_methods: List[SearchMethod]
+search_methods: List[SearchMethodBase]
 search_methods = [
     depth_first,
     breadth_first,
+    depth_limited(2),
     astar,
     hill_climbing,
 ]
@@ -359,3 +357,14 @@ search_methods = [
 if __name__ == '__main__':
     main(search_methods, sys.argv)
 
+
+"""
+Testing methods
+"""
+def get_graph(filename):
+    with open(filename, 'r') as f:
+        return Graph.from_lines(f)
+def make_problem(filename, start='S', goal='G'):
+    with open(filename, 'r') as f:
+        graph = Graph.from_lines(f)
+    return Problem(graph, start, goal)
