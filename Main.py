@@ -14,6 +14,7 @@ from functools import reduce
 import re
 import itertools
 from typing import NamedTuple, List, Dict, Set, FrozenSet, Callable, Iterable, MutableMapping, Union, Tuple
+from types import FunctionType
 import warnings
 import sys
 
@@ -60,8 +61,6 @@ def general_search(problem: Problem, search_method: SearchMethod):
         paths = search_method(graph, paths, opened_paths)
     print(f'   failure to find path between {start} and {goal}')
     return None
-
-
 
 class Problem(NamedTuple):
     graph: Graph
@@ -192,8 +191,7 @@ class SearchMethodMeta(type):
     Allows calling SearchMethods like functions.
     Prevents modification of name and search method.
     Provides convenient string representation.
-    Automatically makes 'search' and 'paths_to_str' static methods.
-      (If 'search' is already static, this will break it.)
+    Automatically makes all methods static unless, except already-static methods.
     """
     def __call__(cls, graph: Graph, open_paths: List[Path], new_paths: List[Path], **kwargs) -> List[Path]:
         return cls.search(graph, open_paths, new_paths, **kwargs)
@@ -205,17 +203,15 @@ class SearchMethodMeta(type):
     def __str__(cls):
         return f"SearchMethod({cls.name})"
     def __new__(cls, name, bases, attrs):
-        # Make search and path_to_str static
-        SearchMethodMeta._staticize(attrs, "search")
-        SearchMethodMeta._staticize(attrs, "paths_to_str")
+        copy = ((k, v) for k, v in attrs.items())
+        for name, value in copy:
+            if not isinstance(value, staticmethod) and isinstance(value, FunctionType):
+                attrs[name] = staticmethod(value)
         return type.__new__(cls, name, bases, attrs)
-    @staticmethod
-    def _staticize(attrs, attr):
-        if attr in attrs:
-            attrs[attr] = staticmethod(attrs[attr])
 
-# These abstract methods will not be enforced, because the subclasses are never instantiated
+# Other searchmethods should look mostly like this one, but this is their only parent.
 class SearchMethod(object, metaclass=SearchMethodMeta):
+    name = None
 
     def search(graph: Graph, open_paths: List[Path], new_paths: Set[Path], **kwargs) -> List[Path]:
         raise TypeError("Can not call abstract search method")
@@ -233,6 +229,9 @@ class SearchMethod(object, metaclass=SearchMethodMeta):
 HELPER METHODS
 """
 def paths_to_str_cost(paths: List[Path], cost_calculator: Callable[[Path], float]) -> str:
+    """Convert a list of paths to a string, using the given cost calculation
+    function for each path.
+    """
     output = ['[']
     for path in paths:
         cost = cost_calculator(path)
@@ -308,17 +307,16 @@ class astar(SearchMethod):
         groups = [list(path) for _, path in
                   groupby(all_paths, key=lambda path: path[0])]
 
-        orderby = astar._cost(graph)
+        orderby = astar.cost(graph)
         return sorted((min(group, key=orderby) for group in groups), key=orderby)
 
-    @staticmethod
-    def _cost(graph):
+    def cost(graph):
         def cost(path):
             return graph.heuristic(path[0]) + graph.path_length(path)
         return cost
 
     def paths_to_str(graph, paths):
-        return paths_to_str_cost(paths, astar._cost(graph))
+        return paths_to_str_cost(paths, astar.cost(graph))
 
 warnings.warn("Hill-climbing does not break ties according to the instructions\n"
               + "\tand we don't know the exact output format they want for hill-climbing")
