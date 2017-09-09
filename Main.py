@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from functools import reduce
 import re
 import itertools
-from typing import NamedTuple, List, Dict, Set, FrozenSet, Callable, Iterable, MutableMapping, Union, Tuple
+from typing import NamedTuple, List, Dict, Set, FrozenSet, Callable, Iterable, MutableMapping, Union, Tuple, Optional
 from types import FunctionType
 import warnings
 import sys
@@ -21,10 +21,11 @@ import sys
 Path = Union[Tuple[str], List[str]]
 
 # Forward references for as-yet-undefined types
-SearchMethod, Problem, Graph = 'SearchMethod', 'Problem', 'Graph'
+SearchMethod, SearchAlgorithm = 'SearchMethod', 'SearchAlgorithm'
+Problem, Graph = 'Problem', 'Graph'
 
 
-def main(search_methods: List[SearchMethod], argv):
+def main(search_methods: List[Union[SearchMethod, SearchAlgorithm]], argv):
     args = argv[1:]
     if len(args) != 1:
         print(f'Must have exactly 1 argument. Arguments detected: {args}')
@@ -33,35 +34,40 @@ def main(search_methods: List[SearchMethod], argv):
     with open(args[0], 'r') as f:
         graph = Graph.from_lines(f)
 
-    first_problem = Problem(graph, 'S', 'G')
+    problem = Problem(graph, 'S', 'G')
+
+    success = '      goal reached!'
+    failure = f'   failure to find path between {problem.start} and {problem.goal}'
 
     print(search_methods)
     for method in search_methods:
-        print(method.name)
-        general_search(first_problem, method)
         print()
+        print(method.name, '   Expanded  Queue', sep='\n\n')
+        if isinstance(method, SearchMethod):
+            result = general_search(problem, method)
+        elif isinstance(method, SearchAlgorithm):
+            print("here")
+            result = method(problem)
+        print(failure if result is None else success, end='\n\n')
 
-def general_search(problem: Problem, search_method: SearchMethod):
+def general_search(problem: Problem, search_method: SearchMethod) -> Optional[Path]:
     graph = problem.graph
     start = problem.start
     goal = problem.goal
     paths = [(start,)]
 
-    print('   Expanded  Queue')
     while paths:
         expanded = paths[0][0]
         print(f'      {expanded}      ', search_method.paths_to_str(graph, paths), sep='')
         path = paths.pop(0)
 
         if expanded == goal:
-            print('      goal reached!')
             return path
 
         opened_paths = {(n,)+path for n in graph.neighbors(expanded) if n not in path}
 
         paths = search_method(graph, paths, opened_paths)
 
-    print(f'   failure to find path between {start} and {goal}')
     return None
 
 class Problem(NamedTuple):
@@ -231,6 +237,26 @@ class SearchMethodBase(object, metaclass=SearchMethod):
         """
         return ''.join(('[<', '> <'.join(','.join(path) for path in paths), '>]'))
 
+class SearchAlgorithm(object):
+    def __init__(self, name, method):
+            self._name = name
+            self._method = method
+
+    def __call__(self, *args, **kwargs):
+        return self.method(*args, **kwargs)
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def method(self):
+        return self._method
+
+def algorithm(name):
+    def wrapper(function):
+        return SearchAlgorithm(name, function)
+    return wrapper
 
 """
 HELPER METHODS
@@ -281,11 +307,17 @@ def depth_limited(limit: int) -> SearchMethod:
 
 # Iterative-Deepening search should be implemented as a normal method,
 # not an extension of SearchMethod and general_search
-def iterative_deepening(SearchMethodBase):
-    name = "Iterative deepening search"
-    def search(graph, open_paths, new_paths):
-        print("   Not Implemented")
-        ...
+@algorithm("Iterative deepening search")
+def iterative_deepening_search(problem: Problem) -> Optional[Path]:
+    graph = problem.graph
+    start = problem.start
+    goal = problem.goal
+
+    for i in itertools.count(): # for i in range(0, infinity)
+        print(f"L={i}")
+        result = general_search(problem, depth_limited(i))
+        if result is not None:
+            return result
 
 
 class uniform_cost(SearchMethodBase):
@@ -348,11 +380,12 @@ def beam(limit: int) -> SearchMethod:
 
 
 # Mapping of algorithm names to functions
-search_methods: List[SearchMethodBase]
+search_methods: List[Union[SearchMethod, SearchAlgorithm]]
 search_methods = [
     depth_first,
     breadth_first,
     depth_limited(2),
+    iterative_deepening_search,
     astar,
     hill_climbing,
 ]
