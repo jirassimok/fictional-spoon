@@ -443,21 +443,12 @@ def beam(limit: int) -> SearchMethod:
         paths_to_str = paths_to_str_heuristic
 
         def search(graph, open_paths, new_paths):
-            # if len(new_paths) == 0:
-            #     return []
-            # else:
-            #     all_paths = {(n,)+path for path in open_paths
-            #                  for n in graph.neighbors(path[0])
-            #                  if n not in path} | new_paths
-            #     all_paths = paths.sorted(all_paths, key=costs.heuristic(graph))
-            #     return all_paths[:limit]
-            # all_paths = open_paths + list[new_paths]
-            paths_of_lengths = [list(paths_of_length) for _length, paths_of_length in
-                                groupby(open_paths + list(new_paths), key=lambda path: len(path))]
-            all_paths = list(itertools.chain(
-                *(sorted(sorted(paths, key=costs.heuristic(graph))[:limit], key=lambda path: path[0])
-                  for paths in paths_of_lengths)))
-            return all_paths
+            paths_by_length = [list(group) for _, group in groupby(open_paths + list(new_paths), key=len)]
+
+            return list(itertools.chain.from_iterable(
+                sorted(sorted(paths, key=costs.heuristic(graph))[:limit]) for paths in paths_by_length)
+            )
+
     return beam_k
 
 
