@@ -10,12 +10,10 @@ Search algorithms
 A project in which several search algorithms are implemented.
 """
 from abc import ABC, abstractmethod
-from functools import reduce
 import re
 import itertools
 from typing import NamedTuple, List, Dict, Set, FrozenSet, Callable, Iterable, MutableMapping, Union, Tuple, Optional
 from types import FunctionType
-import warnings
 import sys
 
 Path = Union[Tuple[str], List[str]]
@@ -69,10 +67,12 @@ def general_search(problem: Problem, search_method: SearchMethod) -> Optional[Pa
 
     return None
 
+
 class Problem(NamedTuple):
     graph: Graph
     start: str
     goal: str
+
 
 class GraphABC(ABC):
     @abstractmethod
@@ -96,22 +96,26 @@ class GraphABC(ABC):
         If any two adjacent nodes in the path are not connected, KeyError.
         """
 
+
 class Graph(GraphABC):
     def __init__(self,
                  edge_lengths: Dict[FrozenSet[str], float],
                  heuristics: Dict[str, float]):
         self._edges = frozenset(edge_lengths.items())
         self._heuristics = frozenset(heuristics.items())
+
     @property
     def edge_lengths(self) -> Dict[FrozenSet[str], float]:
         """A mapping from pairs of adjacent nodes to the distance between them.
         """
         return dict(self._edges)
+
     @property
     def edges(self) -> Set[FrozenSet[str]]:
         """A set of all pairs of adjacent nodes.
         """
         return {edge[0] for edge in self._edges}
+
     @property
     def heuristics(self) -> Dict[str, float]:
         """A mapping from nodes to heuristics
@@ -221,6 +225,7 @@ class SearchMethod(type):
                 attrs[name] = staticmethod(value)
         return type.__new__(cls, name, bases, attrs)
 
+
 class SearchMethodBase(object, metaclass=SearchMethod):
     """Base class that other SearchMethods should inherit from and use as a template"""
 
@@ -235,6 +240,7 @@ class SearchMethodBase(object, metaclass=SearchMethod):
         The default implementation does not print costs.
         """
         return ''.join(('[<', '> <'.join(','.join(path) for path in paths), '>]'))
+
 
 class SearchAlgorithm(object):
     def __init__(self, name, method):
@@ -252,6 +258,7 @@ class SearchAlgorithm(object):
     def method(self):
         return self._method
 
+
 def algorithm(name):
     def wrapper(function):
         return SearchAlgorithm(name, function)
@@ -261,6 +268,8 @@ def algorithm(name):
 """
 HELPER METHODS
 """
+
+
 def paths_to_str_cost(paths: List[Path], cost_calculator: Callable[[Path], float]) -> str:
     """Convert a list of paths to a string, using the given cost calculation
     function for each path.
@@ -272,6 +281,7 @@ def paths_to_str_cost(paths: List[Path], cost_calculator: Callable[[Path], float
     output[-1] = '>]'
     return ''.join(output)
 
+
 def groupby(iterable, key=None):
     """Version of itertools.groupby that sorts by the key first
     """
@@ -279,25 +289,28 @@ def groupby(iterable, key=None):
         key = lambda x: x
     return itertools.groupby(sorted(iterable, key=key), key=key)
 
+
 class costs(object):
     """Utility methods for estimating costs
     """
     @staticmethod
-    def heuristic(graph, path=None):
-        def cost(path):
+    def heuristic(graph: GraphABC, path: Path=None):
+        def cost(path: Path):
             return graph.heuristic(path[0])
         if path is None:
             return cost
         else:
             return cost(path)
+
     @staticmethod
-    def path_cost(graph, path=None):
-        def cost(path):
-            return graph.path_cost(path)
+    def path_cost(graph: GraphABC, path: Path=None):
+        def cost(path: Path):
+            return graph.path_length(path)
         if path is None:
             return cost
         else:
             return cost(path)
+
 
 class paths(object):
     """Utility methods for sorting paths
@@ -318,31 +331,38 @@ class paths(object):
     def min(paths_, *, key=None):
         return min(paths_, key=paths._key(key))
 
-def paths_to_str_heuristic(graph, paths):
+
+def paths_to_str_heuristic(graph: Graph, paths: List[Path]):
     return paths_to_str_cost(paths, costs.heuristic(graph))
-def paths_to_str_path_cost(graph, paths):
+
+def paths_to_str_path_cost(graph: Graph, paths: List[Path]):
     return paths_to_str_cost(paths, costs.path_cost(graph))
 
 """
 SEARCH METHOD IMPLEMENTATIONS
 """
 
+
 class depth_first(SearchMethodBase):
     name = 'Depth 1st search'
+
     def search(graph: Graph, open_paths: List[Path], new_paths: Set[Path]) -> List[Path]:
         return sorted(new_paths) + open_paths
 
 
 class breadth_first(SearchMethodBase):
     name = 'Breadth 1st search'
+
     def search(graph: Graph, open_paths: List[Path], new_paths: Set[Path]) -> List[Path]:
         return open_paths + sorted(new_paths)
 
 
 def depth_limited(limit: int) -> SearchMethod:
     """Method to construct depth-limited search instances of SearchMethod"""
+
     class depth_limited_n(SearchMethodBase):
         name = f"Depth-limited search (depth-limit = {limit})"
+
         def search(graph, open_paths, new_paths):
             valid = lambda path: len(path)-1 <= limit
             return sorted(filter(valid, new_paths)) + open_paths
@@ -363,28 +383,38 @@ def iterative_deepening_search(problem: Problem) -> Optional[Path]:
 
 
 class uniform_cost(SearchMethodBase):
-    name = "Uniform cost search (Branch-and-Bound)"
+    name = "Uniform Search (Branch-and-bound)"
+    paths_to_str = paths_to_str_path_cost
+
     def search(graph, open_paths, new_paths):
-        print("   Not Implemented")
-        ...
+        all_paths = paths.sorted(new_paths.union(open_paths), key=costs.path_cost(graph))
+        return all_paths
 
 
 class greedy(SearchMethodBase):
     name = "Greedy search"
     paths_to_str = paths_to_str_heuristic
+
     def search(graph, open_paths, new_paths):
         all_paths = paths.sorted(new_paths.union(open_paths), key=costs.heuristic(graph))
         return all_paths
 
 class astar(SearchMethodBase):
     name = "A*"
-    def search(graph, open_paths, new_paths):
-        all_paths = open_paths + list(new_paths)
-        groups = [list(path) for _, path in
-                  groupby(all_paths, key=lambda path: path[0])]
 
-        orderby = astar.cost(graph)
-        return paths.sorted((paths.min(group, key=orderby) for group in groups), key=orderby)
+    def search(graph, open_paths, new_paths):
+        # all_paths = open_paths + list(new_paths)
+        # groups = [list(path) for _, path in
+        #           groupby(all_paths, key=lambda path: path[0])]
+        #
+        # orderby = astar.cost(graph)
+        # return paths.sorted((paths.min(group, key=orderby) for group in groups), key=orderby)
+
+        # Instead of group on unexplored node then take shortest,
+        # First filter out new_paths that have unexplored node that unexplored node in open_paths, then do union
+        all_paths = open_paths + [
+            new_path for new_path in list(new_paths) if new_path[0] not in (open_path[0] for open_path in open_paths)]
+        return paths.sorted(all_paths, key=astar.cost(graph))
 
     def cost(graph):
         def cost(path):
@@ -398,6 +428,7 @@ class astar(SearchMethodBase):
 class hill_climbing(SearchMethodBase):
     name = "Hill-climbing search"
     paths_to_str = paths_to_str_heuristic
+
     def search(graph, open_paths, new_paths):
         if len(new_paths) == 0:
             return []
@@ -410,15 +441,23 @@ def beam(limit: int) -> SearchMethod:
     class beam_k(SearchMethodBase):
         name = f"Beam search (w = {limit})"
         paths_to_str = paths_to_str_heuristic
+
         def search(graph, open_paths, new_paths):
-            if len(new_paths) == 0:
-                return []
-            else:
-                all_paths = {(n,)+path for path in open_paths
-                             for n in graph.neighbors(path[0])
-                             if n not in path} | new_paths
-                all_paths = paths.sorted(all_paths, key=costs.heuristic(graph))
-                return all_paths[:limit]
+            # if len(new_paths) == 0:
+            #     return []
+            # else:
+            #     all_paths = {(n,)+path for path in open_paths
+            #                  for n in graph.neighbors(path[0])
+            #                  if n not in path} | new_paths
+            #     all_paths = paths.sorted(all_paths, key=costs.heuristic(graph))
+            #     return all_paths[:limit]
+            # all_paths = open_paths + list[new_paths]
+            paths_of_lengths = [list(paths_of_length) for _length, paths_of_length in
+                                groupby(open_paths + list(new_paths), key=lambda path: len(path))]
+            all_paths = list(itertools.chain(
+                *(sorted(sorted(paths, key=costs.heuristic(graph))[:limit], key=lambda path: path[0])
+                  for paths in paths_of_lengths)))
+            return all_paths
     return beam_k
 
 
@@ -429,6 +468,7 @@ search_methods = [
     breadth_first,
     depth_limited(2),
     iterative_deepening_search,
+    uniform_cost,
     greedy,
     astar,
     hill_climbing,
@@ -444,9 +484,13 @@ if __name__ == '__main__':
 """
 Testing methods
 """
+
+
 def get_graph(filename):
     with open(filename, 'r') as f:
         return Graph.from_lines(f)
+
+
 def make_problem(filename, start='S', goal='G'):
     with open(filename, 'r') as f:
         graph = Graph.from_lines(f)
