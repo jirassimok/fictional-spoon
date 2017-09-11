@@ -42,12 +42,12 @@ def main(search_methods: List[Union[SearchMethod, SearchAlgorithm]], argv):
         print()
         print(method.name, '   Expanded  Queue', sep='\n\n')
         if isinstance(method, SearchMethod):
-            result = general_search(problem, method)
+            result = General_Search(problem, method)
         elif isinstance(method, SearchAlgorithm):
             result = method(problem)
         print(failure if result is None else success, end='\n\n')
 
-def general_search(problem: Problem, search_method: SearchMethod) -> Optional[Path]:
+def General_Search(problem: Problem, search_method: SearchMethod) -> Optional[Path]:
     graph = problem.graph
     start = problem.start
     goal = problem.goal
@@ -377,7 +377,7 @@ def iterative_deepening_search(problem: Problem) -> Optional[Path]:
 
     for i in itertools.count(): # for i in range(0, infinity)
         print(f"L={i}")
-        result = general_search(problem, depth_limited(i))
+        result = General_Search(problem, depth_limited(i))
         if result is not None:
             return result
 
