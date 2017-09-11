@@ -403,18 +403,26 @@ class astar(SearchMethodBase):
     name = "A*"
 
     def search(graph, open_paths, new_paths):
-        # all_paths = open_paths + list(new_paths)
-        # groups = [list(path) for _, path in
-        #           groupby(all_paths, key=lambda path: path[0])]
-        #
-        # orderby = astar.cost(graph)
-        # return paths.sorted((paths.min(group, key=orderby) for group in groups), key=orderby)
+        all_paths = open_paths + list(new_paths)
+        groups = [list(path) for _, path in
+                  groupby(all_paths, key=lambda path: path[0])]
 
-        # Instead of group on unexplored node then take shortest,
-        # First filter out new_paths that have unexplored node that unexplored node in open_paths, then do union
-        all_paths = open_paths + [
-            new_path for new_path in list(new_paths) if new_path[0] not in (open_path[0] for open_path in open_paths)]
-        return paths.sorted(all_paths, key=astar.cost(graph))
+        orderby = astar.cost(graph)
+        return paths.sorted((paths.min(group, key=orderby) for group in groups), key=orderby)
+
+        # # Instead of group on unexplored node then take shortest,
+        # # First filter out new_paths that have unexplored node that unexplored node in open_paths, then do union
+        # all_paths = open_paths + [
+        #     new_path for new_path in new_paths if new_path[0] not in (open_path[0] for open_path in open_paths)]
+        # return paths.sorted(all_paths, key=astar.cost(graph))
+        # # Long form:
+        # news = []
+        # frontier = [open_path[0] for open_path in open_paths]
+        # for new in new_paths:
+        #     if new[0] not in frontier:
+        #         news.append(new)
+        # return paths.sorted(open_paths + news, key=astar.cost(graph))
+
 
     def cost(graph):
         def cost(path):
