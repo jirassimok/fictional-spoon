@@ -37,7 +37,6 @@ def main(search_methods: List[Union[SearchMethod, SearchAlgorithm]], argv):
     success = '      goal reached!'
     failure = f'   failure to find path between {problem.start} and {problem.goal}'
 
-    print(search_methods)
     for method in search_methods:
         print()
         print(method.name, '   Expanded  Queue', sep='\n\n')
