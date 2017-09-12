@@ -3,9 +3,9 @@ Search Algorithms
 
 Team Members:
 Ryan Vereque
-...
-...
+Jacob Ilias Komissar
+David Tang
 
 Language: Python 3.6
-Instructions for Compiling:
-...
+Instructions for Running:
+>py Main.py <filename.txt>
