@@ -451,7 +451,6 @@ def beam(limit: int) -> SearchMethod:
 
         def search(graph, open_paths, new_paths):
             paths_by_length = [list(group) for _, group in groupby(open_paths + list(new_paths), key=len)]
-
             return list(itertools.chain.from_iterable(
                 sorted(sorted(paths, key=costs.heuristic(graph))[:limit]) for paths in paths_by_length)
             )
